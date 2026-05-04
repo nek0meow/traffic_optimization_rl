@@ -1,0 +1,7 @@
+gymnasium==1.2.3
+numpy==2.4.2
+traci==1.26.0
+matplotlib
+stable-baselines3==2.8.0
+rich==15.0.0
+tdqm==0.0.1

@@ -1,0 +1,6 @@
+venv/
+report/
+data/*
+pyrightconfig.json
+**/__pycache__/
+resources/

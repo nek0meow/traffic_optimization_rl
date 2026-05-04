@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-05-11 17:16:30.216397 by Eclipse SUMO randomTrips.py v1_26_0+0000-fa7df22d7f1
+<!-- generated on 2026-05-11 17:14:23.722277 by Eclipse SUMO randomTrips.py v1_26_0+0000-fa7df22d7f1
 <configuration>
     <net-file value=".\maps\gridnet3x3\gridnet3x3.net.xml"/>
-    <output-trip-file value=".\maps\gridnet3x3\trips.trips.xml"/>
     <route-file value=".\maps\gridnet3x3\routes.rou.xml"/>
     <fringe-factor value="max"/>
     <fringe-junctions value="True"/>

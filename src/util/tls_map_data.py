@@ -10,5 +10,4 @@ class TLSInfo:
 @dataclass
 class TlsMapData:
     tls: dict[str, TLSInfo]
-
-
+    adjacency: dict[str, list[tuple[str, float]]]

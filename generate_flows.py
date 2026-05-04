@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import defaultdict
 
-RATE = 0.5
+DEFAULT_RATE = 0.5
 
 def read_trips(trips_file):
     tree = ET.parse(trips_file)
@@ -30,13 +30,13 @@ def group_trips(trips):
     return grouped
 
 
-def generate_flows(grouped_trips):
+def generate_flows(grouped_trips, rate):
     n = sum([len(v) for _, v in grouped_trips])
     flows = []
 
     for i, ((frm, to), departs) in enumerate(grouped_trips.items()):
 
-        prob = min(len(departs) / n * RATE, 0.5)
+        prob = min(len(departs) / n * rate, 0.5)
         
         flows.append(f'''
     <flow id="f{i}"
@@ -67,7 +67,7 @@ def save_content(content, output_path):
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: python trips_to_flows.py <trips.trips.xml> <output.rou.xml>")
+        print("Usage: python trips_to_flows.py <trips.trips.xml> <output.rou.xml> [rate]")
         sys.exit(1)
 
     trips_file = sys.argv[1]
@@ -83,8 +83,9 @@ if __name__ == "__main__":
 
     print(f"Unique OD pairs: {len(grouped)}")
 
+    rate = float(sys.argv[3]) if len(sys.argv) >= 4 else DEFAULT_RATE
     print("Generating flows...")
-    xml_content = generate_flows(grouped)
+    xml_content = generate_flows(grouped, rate)
 
     print("Saving...")
     save_content(xml_content, output_file)

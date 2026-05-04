@@ -1,6 +1,8 @@
 venv/
 report/
 data/*
+data_old/
 pyrightconfig.json
 **/__pycache__/
 resources/
+src/test_algo.py

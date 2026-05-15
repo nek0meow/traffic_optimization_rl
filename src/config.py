@@ -21,4 +21,4 @@ SUMO_CONFIG_AUTO = [
     '--no-warnings'
 ]
 
-CPU_THREADS = 10
+CPU_THREADS = 12

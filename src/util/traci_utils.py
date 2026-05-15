@@ -5,7 +5,7 @@ from util.tls_map_data import TLSInfo, TlsMapData
 from envs.env import SumoTLSControlEnv
 
 
-def calc_cur_stats(env: SumoTLSControlEnv) -> tuple[float, int, float]:
+def calc_cur_stats(env: SumoTLSControlEnv) -> tuple[float, int, float, float]:
     """
     Returns basic information about simulation
 
@@ -13,7 +13,7 @@ def calc_cur_stats(env: SumoTLSControlEnv) -> tuple[float, int, float]:
         env: environment instance
 
     Returns:
-        stats: in-simulation time, vehicle count, average speed
+        stats: in-simulation time, vehicle count, average speed, average waiting time
     """
 
     return env.gather_statistics()

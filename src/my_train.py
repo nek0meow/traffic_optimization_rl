@@ -12,12 +12,14 @@ from util.history import OverallHistory
 from rl.shared_ppo import SharedTLSPolicy
 from rl.nn_utils import masked_dist, tensor, compute_gae_with_next_values
 from util.traci_utils import calc_cur_stats
+from config import CPU_THREADS
+from util.stat_dataclasses import StepStat, OverallStat, aggregate_eq_episode_steps
 
 
 @dataclass
 class TrainConfig:
-    total_env_steps: int = 100_000
-    n_envs: int = 10
+    total_env_steps: int = 150_000
+    n_envs: int = CPU_THREADS
     base_seed: int = 42
     base_port: int = 24000
     rollout_steps: int = 128
@@ -35,8 +37,13 @@ class TrainConfig:
     eval_every: int = 2_000
     eval_episodes: int = 3
     eval_seed: int = 10_000
-    early_stop_evals: int = 10
+    early_stop_evals: int = 15
 
+@dataclass
+class RolloutTask:
+    env: SumoTLSControlEnv
+    action: np.ndarray
+    episode: int
 
 class RolloutBuffer:
     def __init__(self):
@@ -89,6 +96,9 @@ class PPOTrainer:
         self.epoch = 1
         self.best_metric_result = float('-inf')
         self.conseq_no_improve = 0
+
+        self.stat_infos: list[list[StepStat]] = [[] for _ in range(self.n_envs)]
+
 
 
     def train(self, model_dir_path: str, eval_cb=None, early_stopping=True):
@@ -157,46 +167,44 @@ class PPOTrainer:
 
                 action_arr = actions.cpu().numpy().reshape(env_count, agent_count)
 
-                results = list(executor.map(
-                    step_env,
-                    self.envs,
-                    action_arr
-                ))
+                tasks = [
+                    RolloutTask(env, action_arr[env_idx], self.global_episode + env_idx)
+                    for env_idx, env in enumerate(self.envs)
+                ]
+
+                results = list(
+                    executor.map(
+                        self.rollout_worker,
+                        tasks
+                    )
+                )
 
                 next_obs_list = []
                 next_info_list = []
 
                 reward_rows = []
                 done_rows = []
+                ended_eps = 0
 
-                stat_vehicles = [[] for _ in range(self.n_envs)]
-                stat_speeds = [[] for _ in range(self.n_envs)]
-                stat_rewards = [[] for _ in range(self.n_envs)]
-
-                for env_idx, (next_obs, mean_step_reward, terminated, truncated, step_info) in enumerate(results):
-                    done = terminated or truncated
-
-                    rewards = np.asarray(step_info["agent_rewards"], dtype=np.float32)
+                for env_idx, result in enumerate(results):
+                    next_obs, step_info, rewards, done, step_stat = [
+                        result[key] for key in ['next_obs', 'step_info', 'rewards', 'done', 'step_stat']
+                    ]
+                    
                     reward_rows.append(rewards)
                     done_rows.append(np.full(agent_count, float(done), dtype=np.float32))
 
-                    if self.config.stat_every:
-                        _, n_vehicles, avg_speed = calc_cur_stats(self.envs[env_idx])
-                        [arr[env_idx].append(el) for arr, el in zip([stat_vehicles, stat_speeds, stat_rewards], 
-                                                                    [n_vehicles,    avg_speed,   mean_step_reward])]
+                    if step_stat is not None:
+                        self.stat_infos[env_idx].append(step_stat)
+                    
                     if done:
-                        self.history.add_info(
-                            self.global_episode,
-                            float(np.mean(stat_speeds[env_idx])),
-                            float(np.mean(stat_vehicles[env_idx])), 
-                            float(np.mean(stat_rewards[env_idx]))
-                        )
-                        [arr.clear() for arr in [stat_vehicles[env_idx], stat_speeds[env_idx], stat_rewards[env_idx]]]
+                        self.history.add_info(aggregate_eq_episode_steps(self.stat_infos[env_idx], self.global_episode + env_idx))
+                        self.stat_infos[env_idx].clear()
 
                         next_obs, step_info = self.envs[env_idx].reset(
                             seed=self.config.base_seed + self.global_step + env_idx
                         )
-                        self.global_episode += 1
+                        ended_eps += 1
 
                     next_obs_list.append(next_obs)
                     next_info_list.append(step_info)
@@ -223,12 +231,48 @@ class PPOTrainer:
                 info_list = next_info_list
 
                 self.global_step += self.n_envs
+                self.global_episode += ended_eps
 
                 if self.global_step >= self.config.total_env_steps:
                     break
             self.epoch += 1
-
         return buffer, obs_list, info_list
+    
+    def rollout_worker(self, task: RolloutTask):
+        env, action, episode = task.env, task.action, task.episode
+        next_obs, mean_step_reward, terminated, truncated, step_info = env.step(action)
+        done = terminated or truncated
+
+        step_stat = None
+
+        if self.config.stat_every:
+            _, n_vehicles, avg_speed, avg_wait = calc_cur_stats(env)
+            step_stat = StepStat(
+                episode=episode, # not used
+                avg_speed=avg_speed,
+                n_vehicles=n_vehicles,
+                avg_wait=avg_wait,
+                reward=mean_step_reward
+            )
+
+        rewards = np.asarray(
+            step_info["agent_rewards"],
+            dtype=np.float32
+        )
+
+        if done:
+            next_obs, step_info = env.reset(
+                seed=self.config.base_seed + episode
+            )
+
+        return {
+            "next_obs": next_obs,
+            "step_info": step_info,
+            "rewards": rewards,
+            "done": done,
+            "step_stat": step_stat
+        }
+        
 
 
     def update_policy(self, buffer: RolloutBuffer):

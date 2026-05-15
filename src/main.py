@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     device = torch.device("cpu")
 
-    model_name = f"{MAP_NAME}_shared_ppo_coop_{date.today()}"
+    model_name = f"{MAP_NAME}_shared_ppo_coop_1_{date.today()}"
     data_path = os.path.join(PROJ_DIR, DATA_DIR, model_name)
     plot_dir_path = os.path.join(data_path, 'plots')
     model_dir_path = os.path.join(data_path, 'models')

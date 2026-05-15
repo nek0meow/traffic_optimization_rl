@@ -9,8 +9,8 @@ from util.tls_map_data import TlsMapData
 from collections import deque
 from config import SUMO_CONFIG_AUTO
 
-SPEED_SCALE = 15
-SWITCH_COST = 2
+SPEED_SCALE = 10
+SWITCH_COST = 3
 DISTANCE_SCALE = 500.0
 
 @dataclass
@@ -431,7 +431,9 @@ class SumoTLSControlEnv(gym.Env):
 
         for veh in vehicle_ids:
             total_speed += cast(float, self.conn.vehicle.getSpeed(veh))
-            total_waiting += cast(float, traci.vehicle.get)
+        
+        for lane in self.conn.lane.getIDList():
+            total_waiting += cast(float, self._lane_wait(lane))
 
         time = cast(float, self.conn.simulation.getTime())
         avg_speed = total_speed / n if n > 0 else 0

@@ -30,6 +30,9 @@ def plots_over_time(
             axes[i].set_title(label)
         
         fig.tight_layout()
+        plt.grid(
+             alpha=0.9
+        )
 
         if save_to is not None:
             fig.savefig(save_to)

@@ -19,6 +19,7 @@ def evaluate(
     rewards = []
     avg_speeds = []
     avg_vehicles = []
+    avg_waits = []
     action_counts = np.zeros(0, dtype=int)
 
     was_training = policy.training
@@ -36,6 +37,7 @@ def evaluate(
                 episode_rewards = []
                 speeds = []
                 vehicles = []
+                waits = []
 
                 while not done:
                     with torch.no_grad():
@@ -56,13 +58,15 @@ def evaluate(
                     done = terminated or truncated
                     episode_rewards.append(float(reward))
 
-                    _, n_vehicles, avg_speed = calc_cur_stats(env)
+                    _, n_vehicles, avg_speed, avg_wait = calc_cur_stats(env)
                     speeds.append(avg_speed)
                     vehicles.append(n_vehicles)
+                    waits.append(avg_wait)
 
                 rewards.append(float(np.sum(episode_rewards)))
                 avg_speeds.append(float(np.mean(speeds)) if speeds else 0.0)
                 avg_vehicles.append(float(np.mean(vehicles)) if vehicles else 0.0)
+                avg_waits.append(float(np.mean(waits)) if waits else 0.0)
             finally:
                 env.close()
     finally:
@@ -74,11 +78,12 @@ def evaluate(
         'reward_sum': float(np.mean(rewards)),
         'avg_speed': float(np.mean(avg_speeds)),
         'avg_n_vehicles': float(np.mean(avg_vehicles)),
+        'avg_wait': float(np.mean(avg_waits)),
         'action_counts': action_counts.tolist(),
     }
 
     if (verbose):
-        print(f"reward sum={info['reward_sum']:.2f}, avg_speed: {info['avg_speed']:.2f}")
+        print(f"reward sum={info['reward_sum']:.2f}, avg_speed: {info['avg_speed']:.2f}, avg_wait: {info['avg_wait']:.2f}")
         print("action stats: ", info['action_counts'])
 
     return (info['reward_sum'], info)

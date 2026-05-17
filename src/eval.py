@@ -2,7 +2,8 @@ import numpy as np
 import torch
 
 from rl.shared_ppo import SharedTLSPolicy
-from envs.env import SumoTLSControlEnv, EnvConfig
+from envs.env import SumoTLSControlEnv
+from util.config_dataclasses import EnvConfig
 from rl.nn_utils import tensor, masked_dist
 from util.traci_utils import calc_cur_stats
 
@@ -12,6 +13,7 @@ def evaluate(
     tls_data,
     device: torch.device,
     port: int,
+    env_config: EnvConfig,
     episodes: int = 3,
     base_seed: int | None = None,
     verbose = True
@@ -29,7 +31,7 @@ def evaluate(
         if verbose:
             print("STARTING EVAL")
         for episode_idx in range(episodes):
-            env = SumoTLSControlEnv(EnvConfig(port=port), tls_data)
+            env = SumoTLSControlEnv(env_config, tls_data, port=port)
             try:
                 seed = None if base_seed is None else base_seed + episode_idx
                 obs, info = env.reset(seed=seed)

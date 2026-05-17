@@ -28,11 +28,11 @@ def plots_over_time(
             else:
                  axes[i].plot(time_arr, y_col)
             axes[i].set_title(label)
+            axes[i].grid(
+                alpha=0.9
+            )
         
         fig.tight_layout()
-        plt.grid(
-             alpha=0.9
-        )
 
         if save_to is not None:
             fig.savefig(save_to)

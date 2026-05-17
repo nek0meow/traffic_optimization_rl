@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>SUMO PPO Trainer</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="left-panel">
+            <h2>Training Config</h2>
+
+            <label>Model Name</label>
+            <input id="model-name" value="experiment_1">
+
+            <label>Map</label>
+            <select id="map-select">
+                {% for map in maps %}
+                <option value="{{ map }}">{{ map }}</option>
+                {% endfor %}
+            </select>
+
+            <section id="train-sec">
+
+            </section>
+
+            <section id="env-sec">
+
+            </section>
+
+
+            <div class="buttons">
+                <button id="launch-button">Launch Training</button>
+                <button id="stop-button">Stop</button>
+                <button id="launch-gui-button">Launch GUI</button>
+            </div>
+
+            <label>Saved Model</label>
+            <select id="model-select">
+                {% for model in models %}
+                <option value="{{ model.path }}">
+                    {{ model.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="right-panel">
+            <h2>Training Logs</h2>
+            <div id="logs"></div>
+            <h2>History Graphs</h2>
+
+            <label>Saved Histories</label>
+            <select id="history-select">
+                {% for history in histories %}
+                <option value="{{ history }}">
+                    {{ history }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <label>Averaging window</label>
+            <input id="avg-window" type="number" value="25">
+
+            <button id="toggle-history-button">
+                Toggle chart
+            </button>
+
+            <div id="charts-container"></div>
+        </div>
+    </div>
+    <script src="/static/app.js" type="module"></script>
+
+</body>
+
+</html>

@@ -6,35 +6,21 @@ from dataclasses import dataclass
 from typing import cast
 
 from util.tls_map_data import TlsMapData
+from util.config_dataclasses import EnvConfig
 from collections import deque
 from config import SUMO_CONFIG_AUTO
-
-SPEED_SCALE = 10
-SWITCH_COST = 3
-DISTANCE_SCALE = 500.0
-
-@dataclass
-class EnvConfig:
-    port: int = 24000
-    delta_time: int = 5
-    yellow_time: int = 10
-    num_steps: int = 100
-    max_lanes: int = 12
-    max_phases: int = 8
-    max_neighbors: int = 4
-    neighbor_reward_coef: float = 0.2
-
 class SumoTLSControlEnv(gym.Env):
     def __init__(self, 
                  conf: EnvConfig,
                  tls_data: TlsMapData,
-                 sumo_cfg: list[str] = SUMO_CONFIG_AUTO
+                 port: int = 24000,
+                 sumo_cfg: list[str] = SUMO_CONFIG_AUTO,
     ):
         super().__init__()
 
         self.tls_data = tls_data
         self.sumo_cfg = sumo_cfg
-        self.port = conf.port
+        self.port = port
         self.delta_time = conf.delta_time
         self.yellow_time = conf.yellow_time
         self.num_steps = conf.num_steps
@@ -42,6 +28,11 @@ class SumoTLSControlEnv(gym.Env):
         self.max_phases = conf.max_phases
         self.max_neighbors = conf.max_neighbors
         self.neighbor_reward_coef = conf.neighbor_reward_coef
+        self.speed_scale = conf.speed_scale
+        self.switch_cost = conf.switch_cost
+        self.distance_scale = conf.distance_scale
+
+
 
         self.real_time_step: int = 1
         self.cur_step: int = 1
@@ -67,9 +58,10 @@ class SumoTLSControlEnv(gym.Env):
         self.time_in_phase = np.zeros(self.num_agents, dtype=int)
         self.last_waiting_times = np.zeros(self.num_agents, dtype=float)
         self.change_queue: deque[tuple[int, str, int]] = deque()
+        self.changing_tls: set[str] = set()
 
-        tls_feature_size = (self.max_lanes * 3) + (self.max_phases * 2) + 1
-        neighbor_feature_size = tls_feature_size + 1
+        tls_feature_size = self._tls_feature_size()
+        neighbor_feature_size = tls_feature_size + 1   # +1 is distance
         one_obs_size = tls_feature_size + (self.max_neighbors * neighbor_feature_size)
 
         self.single_observation_space = gym.spaces.Box(
@@ -112,6 +104,7 @@ class SumoTLSControlEnv(gym.Env):
         self.real_time_step = 1
         self.cur_step = 1
         self.change_queue.clear()
+        self.changing_tls.clear()
 
         for _ in range(10):
             self.conn.simulationStep()
@@ -166,7 +159,7 @@ class SumoTLSControlEnv(gym.Env):
             obs_parts.append(np.concatenate([
                 self._get_tls_features(neighbor_id),
                 np.array([
-                    min(dist / DISTANCE_SCALE, 1.0),
+                    min(dist / self.distance_scale, 1.0),
                 ], dtype=np.float32)
             ]))
 
@@ -189,7 +182,7 @@ class SumoTLSControlEnv(gym.Env):
             for l in lanes
         ]
         speed = [
-            min(self._lane_speed(l) / SPEED_SCALE, 1.0)
+            min(self._lane_speed(l) / self.speed_scale, 1.0)
             for l in lanes
         ]
         wait = [min(self._lane_wait(l) / 100.0, 1.0) for l in lanes]
@@ -210,16 +203,19 @@ class SumoTLSControlEnv(gym.Env):
             dtype=np.float32
         )
 
-        # (max_lanes * 3 + max_phases * 2 + 1, )
+        is_changing = [int(tls_id in self.change_queue)]
+
+        # (max_lanes * 3 + max_phases * 2 + 2, )
         return np.concatenate([
             *obs_parts,
             phase_one_hot,
             valid_phase_mask,
-            norm_time_in_phase
+            norm_time_in_phase,
+            is_changing
         ]).astype(np.float32)
 
     def _tls_feature_size(self) -> int:
-        return (self.max_lanes * 3) + (self.max_phases * 2) + 1
+        return (self.max_lanes * 3) + (self.max_phases * 2) + 2
 
     def _get_action_mask(self, tls_id: str | None = None) -> np.ndarray:
         if tls_id is None:
@@ -258,14 +254,14 @@ class SumoTLSControlEnv(gym.Env):
         for i, tls_id in enumerate(self.tls_ids):
             action = int(actions[i])
 
-            if action < 0 or action >= self.tls_data.tls[tls_id].num_phases:
+            if action < 0 or action >= self.tls_data.tls[tls_id].num_phases or tls_id in self.changing_tls:
                 effective_actions[i] = int(self.current_phases[i])
-                switch_penalties[i] -= SWITCH_COST
+                switch_penalties[i] -= self.switch_cost
                 continue
 
             phase_changed[i] = action != self.current_phases[i]
             if phase_changed[i]:
-                switch_penalties[i] -= SWITCH_COST
+                switch_penalties[i] -= self.switch_cost
                 self._set_yellow_phase(tls_id, action)
 
         for _ in range(1, self.delta_time + 1):
@@ -311,6 +307,7 @@ class SumoTLSControlEnv(gym.Env):
                 tls_id,
                 self.tls_data.tls[tls_id].green_states[action]
             )
+            self.changing_tls.remove(tls_id)
 
     def _get_agent_rewards(self) -> np.ndarray:
         rewards = np.zeros(self.num_agents, dtype=np.float32)
@@ -346,7 +343,7 @@ class SumoTLSControlEnv(gym.Env):
 
         for neighbor_id, dist in self.neighbors[tls_id]:
             neighbor_idx = self.tls_index[neighbor_id]
-            weight = 1.0 / max(dist / DISTANCE_SCALE, 1.0)
+            weight = 1.0 / max(dist / self.distance_scale, 1.0)
             weighted_reward += float(agent_rewards[neighbor_idx]) * weight
             total_weight += weight
 
@@ -362,9 +359,13 @@ class SumoTLSControlEnv(gym.Env):
         target_state: str = self.tls_data.tls[tls_id].green_states[new_phase]
 
         # G, g -> y
-        yellow_state = ''.join(['y' if (cur in ['G', 'g'] and new == 'r') else cur for cur, new in zip(current_state, target_state)])
+        yellow_state = ''.join([
+            'y' if (cur in ['G', 'g'] and new == 'r') else cur 
+            for cur, new in zip(current_state, target_state)
+        ])
         self.conn.trafficlight.setRedYellowGreenState(tls_id, yellow_state)
         self.change_queue.append((self.real_time_step + self.yellow_time, tls_id, new_phase))
+        self.changing_tls.add(tls_id)
 
     def _subscribe_lanes(self) -> None:
         var_ids = [

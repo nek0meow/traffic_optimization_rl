@@ -13,31 +13,9 @@ from rl.shared_ppo import SharedTLSPolicy
 from rl.nn_utils import masked_dist, tensor, compute_gae_with_next_values
 from util.traci_utils import calc_cur_stats
 from config import CPU_THREADS
-from util.stat_dataclasses import StepStat, OverallStat, aggregate_eq_episode_steps
+from util.stat_dataclasses import StepStat, aggregate_eq_episode_steps
+from util.config_dataclasses import TrainConfig
 
-
-@dataclass
-class TrainConfig:
-    total_env_steps: int = 150_000
-    n_envs: int = CPU_THREADS
-    base_seed: int = 42
-    base_port: int = 24000
-    rollout_steps: int = 128
-    update_steps: int = 4
-    minibatch_size: int = 512
-    learning_rate: float = 3e-4
-    reward_scale: float = 0.05
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
-    clip_coef: float = 0.2
-    value_coef: float = 0.5
-    entropy_coef: float = 0.01
-    max_grad_norm: float = 0.5
-    stat_every: int = 5
-    eval_every: int = 2_000
-    eval_episodes: int = 3
-    eval_seed: int = 10_000
-    early_stop_evals: int = 15
 
 @dataclass
 class RolloutTask:
@@ -120,6 +98,7 @@ class PPOTrainer:
                 info_list
             )
             self.update_policy(buffer)
+            print(f"step={self.global_step}")
 
             cur_eval_period = self.global_step // self.config.eval_every
             if eval_cb and cur_eval_period > eval_periods:
@@ -128,7 +107,7 @@ class PPOTrainer:
                 if metric > self.best_metric_result:
                     self.best_metric_result = metric
                     self.conseq_no_improve = 0
-                    print(f"new best. Saving.")
+                    print(f"new best. Saving...")
                     torch.save(
                         self.policy.state_dict(),
                         os.path.join(model_dir_path, 'best_shared_policy.pt')
@@ -136,9 +115,9 @@ class PPOTrainer:
                 else:
                     self.conseq_no_improve += 1
                     if self.conseq_no_improve >= self.config.early_stop_evals and early_stopping:
-                        print(f'Ended learining on step {self.global_step}: no imporovements for {self.conseq_no_improve} epochs')
+                        print(f'Ended learning on step {self.global_step}: no imporovements for {self.conseq_no_improve} epochs')
                         break
-            print(f"step={self.global_step}")
+        print("TRAINING END")
 
 
     def collect_rollout(
@@ -171,7 +150,6 @@ class PPOTrainer:
                     RolloutTask(env, action_arr[env_idx], self.global_episode + env_idx)
                     for env_idx, env in enumerate(self.envs)
                 ]
-
                 results = list(
                     executor.map(
                         self.rollout_worker,
@@ -236,6 +214,7 @@ class PPOTrainer:
                 if self.global_step >= self.config.total_env_steps:
                     break
             self.epoch += 1
+        
         return buffer, obs_list, info_list
     
     def rollout_worker(self, task: RolloutTask):
@@ -245,7 +224,7 @@ class PPOTrainer:
 
         step_stat = None
 
-        if self.config.stat_every:
+        if env.cur_step % self.config.stat_every == 0:
             _, n_vehicles, avg_speed, avg_wait = calc_cur_stats(env)
             step_stat = StepStat(
                 episode=episode, # not used
@@ -259,7 +238,6 @@ class PPOTrainer:
             step_info["agent_rewards"],
             dtype=np.float32
         )
-
         if done:
             next_obs, step_info = env.reset(
                 seed=self.config.base_seed + episode
@@ -272,7 +250,6 @@ class PPOTrainer:
             "done": done,
             "step_stat": step_stat
         }
-        
 
 
     def update_policy(self, buffer: RolloutBuffer):
@@ -316,9 +293,7 @@ class PPOTrainer:
                 dist = masked_dist(logits, flat_masks[mb_idx])
 
                 new_log_probs = dist.log_prob(flat_actions[mb_idx])
-
                 entropy = dist.entropy().mean()
-
                 ratio = (new_log_probs - flat_old_log_probs[mb_idx]).exp()
 
                 pg_loss_1 = (
